@@ -11,15 +11,18 @@ from typing import Any
 _langfuse = None
 _enabled = False
 _host = ""
+_public_host = ""
 
 
 def init_langfuse():
     """Initialize Langfuse client from environment variables."""
-    global _langfuse, _enabled, _host
+    global _langfuse, _enabled, _host, _public_host
 
     public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "")
     secret_key = os.getenv("LANGFUSE_SECRET_KEY", "")
     _host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+    # LANGFUSE_PUBLIC_HOST is the browser-accessible URL (defaults to http://localhost:3000)
+    _public_host = os.getenv("LANGFUSE_PUBLIC_HOST", _host)
 
     if public_key and secret_key:
         try:
@@ -53,8 +56,8 @@ def create_trace(name: str, **kwargs: Any):
 
 
 def get_trace_url(trace_id: str) -> str:
-    """Build the dashboard URL for a trace."""
-    return f"{_host}/trace/{trace_id}"
+    """Build the browser-accessible dashboard URL for a trace."""
+    return f"{_public_host}/trace/{trace_id}"
 
 
 def flush():
