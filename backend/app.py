@@ -1,7 +1,9 @@
+import os
+
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel, Field
 import json
 import asyncio
 from functools import partial
@@ -13,10 +15,14 @@ from importers import process_uploaded_file
 
 app = FastAPI(title="Digital Twin API", version="1.0.0")
 
+# CORS: use CORS_ORIGINS env var in production, default to * for development
+_cors_origins = os.getenv("CORS_ORIGINS", "*")
+_allowed_origins = [o.strip() for o in _cors_origins.split(",")] if _cors_origins != "*" else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_allowed_origins,
+    allow_credentials=_cors_origins != "*",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -24,8 +30,11 @@ app.add_middleware(
 rag = RAGEngine()
 
 
+MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "5000"))
+
+
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_LENGTH)
 
 
 class DeleteSourceRequest(BaseModel):
@@ -85,7 +94,6 @@ async def chat(request: ChatRequest):
         "retrieval_time_ms": round(t_retrieval * 1000),
         "chunks": retrieval_chunks,
         "llm_model": LLM_MODEL,
-        "llm_base_url": LLM_BASE_URL,
         "system_prompt_length": len(system_prompt),
         "context_length": len(context),
     }
@@ -143,6 +151,12 @@ async def upload_files(files: list[UploadFile] = File(...)):
                 "type": processed["type"],
                 "chunks": chunks,
                 "status": "success",
+            })
+        except ValueError as e:
+            results.append({
+                "filename": file.filename,
+                "status": "error",
+                "error": f"Invalid file format: {e}",
             })
         except Exception as e:
             results.append({
@@ -212,7 +226,6 @@ def list_chunks(
 def get_chunk(chunk_id: str):
     chunk = rag.get_chunk(chunk_id)
     if not chunk:
-        from fastapi.responses import JSONResponse
         return JSONResponse(status_code=404, content={"error": "Chunk not found"})
     return chunk
 
@@ -221,7 +234,6 @@ def get_chunk(chunk_id: str):
 def update_chunk(chunk_id: str, body: ChunkUpdate):
     ok = rag.update_chunk(chunk_id, body.text)
     if not ok:
-        from fastapi.responses import JSONResponse
         return JSONResponse(status_code=404, content={"error": "Chunk not found"})
     return {"status": "updated", "id": chunk_id}
 
@@ -230,7 +242,6 @@ def update_chunk(chunk_id: str, body: ChunkUpdate):
 def delete_chunk(chunk_id: str):
     ok = rag.delete_chunk(chunk_id)
     if not ok:
-        from fastapi.responses import JSONResponse
         return JSONResponse(status_code=404, content={"error": "Chunk not found"})
     return {"status": "deleted", "id": chunk_id}
 
@@ -239,7 +250,6 @@ def delete_chunk(chunk_id: str):
 def create_chunk(body: ChunkCreate):
     chunk_id = rag.add_chunk(body.text, body.source_type, body.source_name)
     return {"status": "created", "id": chunk_id}
-    return update_config(updates)
 
 
 if __name__ == "__main__":

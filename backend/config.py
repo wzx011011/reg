@@ -44,9 +44,16 @@ SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT)
 
 
 def get_all_config() -> dict:
-    """Return all current configuration values."""
+    """Return all current configuration values (sensitive fields masked)."""
+    # Mask base URL: show only domain
+    masked_url = LLM_BASE_URL
+    if "://" in LLM_BASE_URL:
+        from urllib.parse import urlparse
+        parsed = urlparse(LLM_BASE_URL)
+        masked_url = f"{parsed.scheme}://{parsed.hostname}/***"
+
     return {
-        "llm_base_url": LLM_BASE_URL,
+        "llm_base_url": masked_url,
         "llm_api_key": ("*" * 8 + LLM_API_KEY[-6:]) if len(LLM_API_KEY) > 6 else "未配置",
         "llm_model": LLM_MODEL,
         "chunk_size": CHUNK_SIZE,
