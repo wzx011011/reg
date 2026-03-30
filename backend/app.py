@@ -12,6 +12,7 @@ from config import HOST, PORT, UPLOADS_DIR, LLM_API_KEY, get_all_config, update_
 from config import LLM_BASE_URL, LLM_MODEL, TOP_K, CHUNK_SIZE, SYSTEM_PROMPT
 from rag import RAGEngine
 from importers import process_uploaded_file
+from tracing import init_langfuse, create_trace, get_trace_url, flush as lf_flush, is_enabled as lf_enabled
 
 app = FastAPI(title="Digital Twin API", version="1.0.0")
 
@@ -28,6 +29,7 @@ app.add_middleware(
 )
 
 rag = RAGEngine()
+init_langfuse()
 
 
 MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "5000"))
@@ -51,6 +53,7 @@ def health():
     return {
         "status": "ok",
         "llm_configured": bool(LLM_API_KEY),
+        "langfuse_enabled": lf_enabled(),
         "total_chunks": stats["total_chunks"],
     }
 
@@ -60,10 +63,31 @@ async def chat(request: ChatRequest):
     import time
     t0 = time.time()
 
+    # Create Langfuse trace (None if not configured)
+    trace = create_trace(
+        name="chat",
+        input={"message": request.message},
+        metadata={"top_k": TOP_K, "chunk_size": CHUNK_SIZE, "model": LLM_MODEL},
+    )
+
+    # Retrieval span
+    retrieval_span = None
+    if trace:
+        retrieval_span = trace.span(
+            name="vector_retrieval",
+            input={"query": request.message, "top_k": TOP_K},
+        )
+
     # Run blocking ChromaDB query in thread
     loop = asyncio.get_event_loop()
     results = await loop.run_in_executor(None, partial(rag.query, request.message))
     t_retrieval = time.time() - t0
+
+    if retrieval_span:
+        retrieval_span.end(output={
+            "chunks_count": len(results.get("documents", [])),
+            "retrieval_time_ms": round(t_retrieval * 1000),
+        })
 
     context = rag.format_context(results)
     sources = rag.extract_sources(results)
@@ -98,7 +122,27 @@ async def chat(request: ChatRequest):
         "context_length": len(context),
     }
 
+    # Add Langfuse trace link if enabled
+    if trace:
+        retrieval_info["trace_id"] = trace.id
+        retrieval_info["trace_url"] = get_trace_url(trace.id)
+
+    # Create LLM generation span
+    generation = None
+    if trace:
+        generation = trace.generation(
+            name="llm_response",
+            model=LLM_MODEL,
+            input=[
+                {"role": "system", "content": f"[system prompt: {len(system_prompt)} chars]"},
+                {"role": "user", "content": request.message},
+            ],
+            metadata={"context_length": len(context)},
+        )
+
     async def generate():
+        full_response = ""
+
         # 1. Send retrieval details
         yield f"data: {json.dumps({'type': 'retrieval', 'data': retrieval_info}, ensure_ascii=False)}\n\n"
 
@@ -107,9 +151,18 @@ async def chat(request: ChatRequest):
 
         # 3. Stream LLM response
         async for event in rag.llm_stream(request.message, context):
+            if event.get("type") == "chunk":
+                full_response += event.get("content", "")
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        # End Langfuse generation & trace
+        if generation:
+            generation.end(output=full_response[:2000])
+        if trace:
+            trace.update(output={"response": full_response[:500], "sources_count": len(sources)})
+        lf_flush()
 
     return StreamingResponse(
         generate(),

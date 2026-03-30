@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Send, Bot, User, FileText, Bookmark, BookOpen, Loader2,
   Wifi, WifiOff, ChevronDown, ChevronRight, Search, Brain,
-  Cpu, Clock, Database, Zap,
+  Cpu, Clock, Database, Zap, ExternalLink,
 } from 'lucide-react'
 import { checkHealth, streamChat } from '../lib/api'
 
@@ -29,9 +29,10 @@ interface RetrievalInfo {
   retrieval_time_ms: number
   chunks: RetrievalChunk[]
   llm_model: string
-  llm_base_url: string
   system_prompt_length: number
   context_length: number
+  trace_id?: string
+  trace_url?: string
 }
 
 interface Message {
@@ -218,6 +219,18 @@ function ThinkingPanel({ retrieval }: { retrieval: RetrievalInfo }) {
               <span>上下文: <span className="text-foreground">{retrieval.context_length} 字</span></span>
               <span>System Prompt: <span className="text-foreground">{retrieval.system_prompt_length} 字</span></span>
             </div>
+            {retrieval.trace_url && (
+              <a
+                href={retrieval.trace_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 mt-2 text-[10px] text-primary hover:text-primary/80 transition-colors"
+              >
+                <ExternalLink size={10} />
+                <span>Langfuse Trace</span>
+                <span className="text-muted-foreground/50 font-mono">{retrieval.trace_id?.slice(0, 8)}</span>
+              </a>
+            )}
           </div>
         </div>
       )}
