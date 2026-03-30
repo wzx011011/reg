@@ -1,0 +1,211 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Core palette - Deep space theme */
+  --background: 230 25% 5%;
+  --foreground: 210 20% 95%;
+
+  /* Surfaces */
+  --surface: 230 20% 10%;
+  --surface-elevated: 230 18% 14%;
+
+  /* Primary - Violet/Indigo */
+  --primary: 250 80% 60%;
+  --primary-foreground: 0 0% 100%;
+  --primary-glow: 265 90% 72%;
+
+  /* Secondary */
+  --secondary: 230 15% 20%;
+  --secondary-foreground: 210 15% 80%;
+
+  /* Accent - Cyan */
+  --accent: 185 85% 55%;
+  --accent-foreground: 210 30% 8%;
+
+  /* Muted */
+  --muted: 230 15% 18%;
+  --muted-foreground: 220 10% 50%;
+
+  /* Border */
+  --border: 230 15% 18%;
+  --ring: 250 80% 60%;
+
+  /* Feedback */
+  --success: 155 70% 45%;
+  --warning: 38 92% 55%;
+  --destructive: 0 75% 58%;
+
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, hsl(250 80% 60%), hsl(265 90% 72%));
+  --gradient-bg: radial-gradient(ellipse 80% 50% at 50% -20%, hsl(250 40% 16%) 0%, hsl(230 25% 5%) 100%);
+  --gradient-surface: linear-gradient(180deg, hsl(230 18% 14%), hsl(230 20% 10%));
+}
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+@layer components {
+  /* Glass morphism */
+  .glass {
+    background: hsl(var(--surface) / 0.5);
+    backdrop-filter: blur(16px);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  .glass-elevated {
+    background: hsl(var(--surface-elevated) / 0.6);
+    backdrop-filter: blur(20px);
+    border: 1px solid hsl(var(--border) / 0.6);
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Glow border */
+  .glow-border {
+    position: relative;
+    overflow: visible;
+  }
+  .glow-border::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: var(--gradient-primary);
+    opacity: 0.4;
+    z-index: -1;
+    filter: blur(10px);
+    transition: opacity 0.3s ease;
+  }
+  .glow-border:hover::before {
+    opacity: 0.7;
+  }
+
+  /* Btn primary gradient */
+  .btn-primary {
+    background: var(--gradient-primary);
+    color: hsl(var(--primary-foreground));
+    padding: 0.625rem 1.5rem;
+    border-radius: 0.75rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 16px hsl(var(--primary) / 0.3);
+  }
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px hsl(var(--primary) / 0.4);
+  }
+
+  /* Btn secondary */
+  .btn-secondary {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+    padding: 0.625rem 1.5rem;
+    border-radius: 0.75rem;
+    font-weight: 500;
+    border: 1px solid hsl(var(--border));
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .btn-secondary:hover {
+    background: hsl(var(--surface-elevated));
+    border-color: hsl(var(--muted-foreground) / 0.3);
+  }
+
+  /* Card */
+  .card {
+    background: hsl(var(--surface));
+    border: 1px solid hsl(var(--border));
+    border-radius: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .card:hover {
+    border-color: hsl(var(--primary) / 0.3);
+    box-shadow: 0 4px 20px hsl(0 0% 0% / 0.3);
+  }
+
+  /* Orb - the digital twin visual */
+  .orb-container {
+    position: relative;
+    width: 200px;
+    height: 200px;
+  }
+  .orb {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%,
+      hsl(265 90% 78%) 0%,
+      hsl(250 80% 60%) 40%,
+      hsl(240 60% 35%) 70%,
+      hsl(230 25% 12%) 100%
+    );
+    box-shadow:
+      0 0 60px 15px hsl(250 80% 60% / 0.25),
+      0 0 100px 40px hsl(265 90% 72% / 0.1),
+      inset 0 0 30px hsl(265 90% 72% / 0.2);
+  }
+  .orb-ring {
+    position: absolute;
+    inset: -20px;
+    border-radius: 50%;
+    border: 1px solid hsl(var(--primary) / 0.15);
+  }
+  .orb-ring-2 {
+    position: absolute;
+    inset: -40px;
+    border-radius: 50%;
+    border: 1px dashed hsl(var(--primary) / 0.08);
+  }
+  .orb-particle {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: hsl(var(--accent));
+    box-shadow: 0 0 8px hsl(var(--accent) / 0.6);
+  }
+}
