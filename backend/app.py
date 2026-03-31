@@ -13,6 +13,7 @@ from config import LLM_BASE_URL, LLM_MODEL, TOP_K, CHUNK_SIZE, SYSTEM_PROMPT
 from rag import RAGEngine
 from importers import process_uploaded_file
 from tracing import init_langfuse, create_trace, get_trace_url, flush as lf_flush, is_enabled as lf_enabled
+from evals import auto_evaluate, store_feedback, get_feedback, get_all_feedback
 
 app = FastAPI(title="Digital Twin API", version="1.0.0")
 
@@ -155,6 +156,11 @@ async def chat(request: ChatRequest):
                 full_response += event.get("content", "")
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
+        # 4. Auto-evaluate (async, non-blocking to user)
+        eval_result = await auto_evaluate(request.message, context, full_response)
+        if eval_result:
+            yield f"data: {json.dumps({'type': 'eval', 'data': eval_result}, ensure_ascii=False)}\n\n"
+
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         # End Langfuse generation & trace
@@ -162,6 +168,9 @@ async def chat(request: ChatRequest):
             generation.end(output=full_response[:2000])
         if trace:
             trace.update(output={"response": full_response[:500], "sources_count": len(sources)})
+            if eval_result:
+                for dim, val in eval_result.items():
+                    trace.score(name=dim, value=val["score"] / 10.0, comment=val.get("reason", ""))
         lf_flush()
 
     return StreamingResponse(
@@ -303,6 +312,33 @@ def delete_chunk(chunk_id: str):
 def create_chunk(body: ChunkCreate):
     chunk_id = rag.add_chunk(body.text, body.source_type, body.source_name)
     return {"status": "created", "id": chunk_id}
+
+
+# ---- Feedback / Eval endpoints ----
+
+class FeedbackRequest(BaseModel):
+    message_id: str
+    score: int = Field(..., ge=-1, le=1)  # -1=bad, 0=neutral, 1=good
+    comment: str = ""
+
+
+@app.post("/api/feedback")
+def post_feedback(body: FeedbackRequest):
+    entry = store_feedback(body.message_id, body.score, body.comment)
+    return {"status": "ok", "feedback": entry}
+
+
+@app.get("/api/feedback")
+def list_feedback():
+    return {"feedback": get_all_feedback()}
+
+
+@app.get("/api/feedback/{message_id}")
+def get_msg_feedback(message_id: str):
+    fb = get_feedback(message_id)
+    if not fb:
+        return JSONResponse(status_code=404, content={"error": "No feedback"})
+    return fb
 
 
 if __name__ == "__main__":

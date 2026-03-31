@@ -149,3 +149,15 @@ export async function createChunk(text: string, source_type: string, source_name
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return await res.json()
 }
+
+// ---- Feedback API ----
+
+export async function sendFeedback(messageId: string, score: number, comment: string = '') {
+  const res = await fetch(`${API_BASE}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message_id: messageId, score, comment }),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return await res.json()
+}

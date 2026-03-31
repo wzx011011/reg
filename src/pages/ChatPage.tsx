@@ -2,9 +2,10 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Send, Bot, User, FileText, Bookmark, BookOpen, Loader2,
   Wifi, WifiOff, ChevronDown, ChevronRight, Search, Brain,
-  Cpu, Clock, Database, Zap, ExternalLink,
+  Cpu, Clock, Database, Zap, ExternalLink, ThumbsUp, ThumbsDown,
+  BarChart3,
 } from 'lucide-react'
-import { checkHealth, streamChat } from '../lib/api'
+import { checkHealth, streamChat, sendFeedback } from '../lib/api'
 
 interface Source {
   type: 'blog' | 'bookmark' | 'document'
@@ -35,12 +36,25 @@ interface RetrievalInfo {
   trace_url?: string
 }
 
+interface EvalDimension {
+  score: number
+  reason: string
+}
+
+interface EvalScores {
+  relevance: EvalDimension
+  faithfulness: EvalDimension
+  completeness: EvalDimension
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   sources?: Source[]
   retrieval?: RetrievalInfo
+  eval?: EvalScores
+  feedback?: number  // -1, 0, 1
   timestamp: Date
 }
 
@@ -238,6 +252,78 @@ function ThinkingPanel({ retrieval }: { retrieval: RetrievalInfo }) {
   )
 }
 
+// ---- Eval Scores Component ----
+function getScoreColor(score: number): string {
+  if (score >= 8) return 'text-success'
+  if (score >= 5) return 'text-accent'
+  if (score >= 3) return 'text-warning'
+  return 'text-destructive'
+}
+
+function getScoreBarColor(score: number): string {
+  if (score >= 8) return 'bg-success'
+  if (score >= 5) return 'bg-accent'
+  if (score >= 3) return 'bg-warning'
+  return 'bg-destructive'
+}
+
+const evalLabels: Record<string, string> = {
+  relevance: '相关度',
+  faithfulness: '忠实度',
+  completeness: '完整度',
+}
+
+function EvalPanel({ evalData }: { evalData: EvalScores }) {
+  const [expanded, setExpanded] = useState(false)
+  const avg = Math.round(
+    (evalData.relevance.score + evalData.faithfulness.score + evalData.completeness.score) / 3 * 10
+  ) / 10
+
+  return (
+    <div className="mt-1">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <BarChart3 size={13} className="text-accent" />
+        <span>质量评估</span>
+        <span className={`text-[10px] font-medium ml-1 ${getScoreColor(avg)}`}>
+          {avg}/10
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="mt-2 rounded-xl border border-border/50 bg-surface/50 overflow-hidden text-xs animate-fade-in p-3">
+          <div className="space-y-2.5">
+            {(Object.keys(evalLabels) as Array<keyof typeof evalLabels>).map((key) => {
+              const dim = evalData[key as keyof EvalScores]
+              if (!dim) return null
+              return (
+                <div key={key}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-muted-foreground">{evalLabels[key]}</span>
+                    <span className={`font-mono font-medium ${getScoreColor(dim.score)}`}>
+                      {dim.score}/10
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-border/30 rounded-full overflow-hidden mb-1">
+                    <div
+                      className={`h-full rounded-full transition-all ${getScoreBarColor(dim.score)}`}
+                      style={{ width: `${dim.score * 10}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/70">{dim.reason}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- Main Chat Page ----
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE])
@@ -288,6 +374,7 @@ export default function ChatPage() {
         let content = ''
         let sources: Source[] = []
         let retrieval: RetrievalInfo | undefined
+        let evalResult: EvalScores | undefined
 
         for await (const event of streamChat(trimmed)) {
           switch (event.type) {
@@ -306,6 +393,12 @@ export default function ChatPage() {
                 prev.map(m => (m.id === aiId ? { ...m, retrieval } : m))
               )
               break
+            case 'eval':
+              evalResult = event.data
+              setMessages(prev =>
+                prev.map(m => (m.id === aiId ? { ...m, eval: evalResult } : m))
+              )
+              break
             case 'error':
               content = event.content
               break
@@ -313,7 +406,7 @@ export default function ChatPage() {
         }
 
         setMessages(prev =>
-          prev.map(m => (m.id === aiId ? { ...m, content, sources, retrieval } : m))
+          prev.map(m => (m.id === aiId ? { ...m, content, sources, retrieval, eval: evalResult } : m))
         )
       } catch {
         setMessages(prev =>
@@ -341,6 +434,15 @@ export default function ChatPage() {
       handleSend()
     }
   }
+
+  const handleFeedback = useCallback(async (msgId: string, score: number) => {
+    setMessages(prev =>
+      prev.map(m => (m.id === msgId ? { ...m, feedback: score } : m))
+    )
+    try {
+      await sendFeedback(msgId, score)
+    } catch { /* silent */ }
+  }, [])
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -397,6 +499,44 @@ export default function ChatPage() {
                 {/* Thinking Process Panel */}
                 {msg.retrieval && (
                   <ThinkingPanel retrieval={msg.retrieval} />
+                )}
+
+                {/* Eval Scores */}
+                {msg.eval && (
+                  <EvalPanel evalData={msg.eval} />
+                )}
+
+                {/* Feedback Buttons */}
+                {msg.role === 'assistant' && msg.content && msg.id !== '0' && (
+                  <div className="flex items-center gap-1 mt-1.5">
+                    <button
+                      onClick={() => handleFeedback(msg.id, 1)}
+                      className={`p-1 rounded-md transition-all ${
+                        msg.feedback === 1
+                          ? 'text-success bg-success/15'
+                          : 'text-muted-foreground/40 hover:text-success hover:bg-success/10'
+                      }`}
+                      title="回答有帮助"
+                    >
+                      <ThumbsUp size={12} />
+                    </button>
+                    <button
+                      onClick={() => handleFeedback(msg.id, -1)}
+                      className={`p-1 rounded-md transition-all ${
+                        msg.feedback === -1
+                          ? 'text-destructive bg-destructive/15'
+                          : 'text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10'
+                      }`}
+                      title="回答不好"
+                    >
+                      <ThumbsDown size={12} />
+                    </button>
+                    {msg.feedback !== undefined && (
+                      <span className="text-[10px] text-muted-foreground/50 ml-1">
+                        {msg.feedback === 1 ? '已点赞' : '已反馈'}
+                      </span>
+                    )}
+                  </div>
                 )}
 
                 {/* Sources */}
